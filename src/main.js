@@ -3,6 +3,16 @@
    ═══════════════════════════════════════════════════════════════ */
 import './style.css';
 import { EXERCISE_VISUALS } from './exerciseVisuals.js';
+import {
+  supabase,
+  getCurrentUser,
+  signIn,
+  signUp,
+  signOut,
+  pullCloudToLocal,
+  pushDayToCloud,
+  pushProfileToCloud,
+} from './supabase.js';
 
 // ─── Constants ─────────────────────────────────────────────────
 const ARC_START = new Date(2026, 9, 1); // Oct 1, 2026
@@ -671,15 +681,34 @@ function loadData() {
   return getDefaultData();
 }
 
-function saveData(data) {
+function saveData(data, dayKey = null) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (CURRENT_USER) {
+      const key = dayKey || dateKey(today());
+      if (data.days && data.days[key]) {
+        pushDayToCloud(CURRENT_USER.id, key, data.days[key]);
+      }
+      if (data.userName || data.userAvatar) {
+        pushProfileToCloud(CURRENT_USER.id, {
+          display_name: data.userName,
+          avatar: data.userAvatar || 'wolf'
+        });
+      }
+    }
   } catch (e) {
     console.error('Failed to save data:', e);
   }
 }
 
+// Cloud-aware day save — fire-and-forget, never blocks UI
+function saveDayData(dayDate) {
+  const key = dateKey(dayDate || today());
+  saveData(APP_DATA, key);
+}
+
 let APP_DATA = loadData();
+let CURRENT_USER = null; // Set after auth check on boot
 
 // ─── Utilities ─────────────────────────────────────────────────
 function today() {
@@ -1561,6 +1590,24 @@ function renderApp() {
               <p>Clear all progress (this cannot be undone)</p>
             </div>
           </div>
+
+          ${CURRENT_USER ? `
+          <div class="settings-item" id="btn-signout">
+            <span class="settings-icon">🚪</span>
+            <div class="settings-info">
+              <h4>Sign Out</h4>
+              <p>Signed in as ${CURRENT_USER.email} · Cloud sync active ☁️</p>
+            </div>
+          </div>
+          ` : `
+          <div class="settings-item" id="btn-show-auth">
+            <span class="settings-icon">☁️</span>
+            <div class="settings-info">
+              <h4>Sign In / Create Account</h4>
+              <p>Sync your progress to the cloud</p>
+            </div>
+          </div>
+          `}
         </div>
 
         <!-- Monthly Checkpoints -->
@@ -1603,6 +1650,64 @@ function renderApp() {
         <span>Profile</span>
       </button>
     </nav>
+
+    <!-- ═══ Auth Modal (Supabase Cloud Sync) ═══ -->
+    <div class="auth-modal-overlay" id="auth-modal" style="display:none">
+      <div class="auth-modal-card">
+        <button class="auth-modal-close" id="auth-btn-close" aria-label="Close">✕</button>
+        
+        <div class="auth-badge">❄️ CLOUD VAULT</div>
+        <h2 class="auth-title">Winter Arc 2026</h2>
+        <p class="auth-subtitle">Sync your 92-day transformation across all devices.</p>
+
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="auth-tab-signin">Sign In</button>
+          <button class="auth-tab" id="auth-tab-signup">New Arc</button>
+        </div>
+
+        <div id="auth-error" class="auth-error-msg" style="display:none"></div>
+
+        <!-- Sign In Form -->
+        <div id="auth-panel-signin" class="auth-form-panel">
+          <div class="auth-input-group">
+            <label class="auth-label">Email Address</label>
+            <input type="email" id="auth-email" class="auth-input" placeholder="warrior@winterarc.io" autocomplete="email" />
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Password</label>
+            <input type="password" id="auth-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
+          </div>
+          <button class="btn btn-primary auth-btn-submit" id="auth-btn-signin">
+            <span>Enter The Arc</span>
+            <span>→</span>
+          </button>
+        </div>
+
+        <!-- Sign Up Form -->
+        <div id="auth-panel-signup" class="auth-form-panel" style="display:none">
+          <div class="auth-input-group">
+            <label class="auth-label">Warrior Name</label>
+            <input type="text" id="auth-name" class="auth-input" placeholder="Ghost / Shadow / Titan" autocomplete="name" />
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Email Address</label>
+            <input type="email" id="auth-email-2" class="auth-input" placeholder="warrior@winterarc.io" autocomplete="email" />
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Set Password</label>
+            <input type="password" id="auth-password-2" class="auth-input" placeholder="Min 6 characters" autocomplete="new-password" />
+          </div>
+          <button class="btn btn-primary auth-btn-submit" id="auth-btn-signup">
+            <span>Begin My Journey</span>
+            <span>⚡</span>
+          </button>
+        </div>
+
+        <div class="auth-footer-actions">
+          <button class="auth-btn-guest" id="auth-btn-guest">Continue offline as Guest (Local only)</button>
+        </div>
+      </div>
+    </div>
   `;
 
   attachEventListeners();
@@ -2405,6 +2510,9 @@ function attachEventListeners() {
       showToast('All data reset.', '🗑️');
     }
   });
+
+  // Supabase Auth bindings
+  bindAuthModal();
 }
 
 
@@ -2424,4 +2532,165 @@ window.addEventListener('resize', () => {
   if (typeof updateNavIndicator === 'function') updateNavIndicator();
 });
 
-renderApp();
+// ═══ Auth Modal Logic ══════════════════════════════════
+function showAuthModal() {
+  const modal = document.getElementById('auth-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function hideAuthModal() {
+  const modal = document.getElementById('auth-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function bindAuthModal() {
+  const modal = document.getElementById('auth-modal');
+  if (!modal) return;
+
+  // Tab switching
+  document.getElementById('auth-tab-signin')?.addEventListener('click', () => {
+    document.getElementById('auth-panel-signin').style.display = '';
+    document.getElementById('auth-panel-signup').style.display = 'none';
+    document.getElementById('auth-tab-signin').classList.add('active');
+    document.getElementById('auth-tab-signup').classList.remove('active');
+    document.getElementById('auth-error').style.display = 'none';
+  });
+  document.getElementById('auth-tab-signup')?.addEventListener('click', () => {
+    document.getElementById('auth-panel-signin').style.display = 'none';
+    document.getElementById('auth-panel-signup').style.display = '';
+    document.getElementById('auth-tab-signup').classList.add('active');
+    document.getElementById('auth-tab-signin').classList.remove('active');
+    document.getElementById('auth-error').style.display = 'none';
+  });
+
+  function showError(msg) {
+    const el = document.getElementById('auth-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    if (btn) btn.disabled = loading;
+  }
+
+  // Sign In
+  document.getElementById('auth-btn-signin')?.addEventListener('click', async () => {
+    const email    = document.getElementById('auth-email')?.value.trim();
+    const password = document.getElementById('auth-password')?.value;
+    if (!email || !password) { showError('Please fill in all fields.'); return; }
+    setLoading('auth-btn-signin', true);
+    try {
+      await signIn(email, password);
+      CURRENT_USER = await getCurrentUser();
+      await pullCloudToLocal(CURRENT_USER.id, STORAGE_KEY);
+      APP_DATA = loadData();
+      hideAuthModal();
+      renderApp();
+      showToast(`Welcome back, ${CURRENT_USER.email.split('@')[0]}! ☁️ Progress synced.`, '❄️');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setLoading('auth-btn-signin', false);
+    }
+  });
+
+  // Sign Up
+  document.getElementById('auth-btn-signup')?.addEventListener('click', async () => {
+    const name     = document.getElementById('auth-name')?.value.trim();
+    const email    = document.getElementById('auth-email-2')?.value.trim();
+    const password = document.getElementById('auth-password-2')?.value;
+    if (!name || !email || !password) { showError('Please fill in all fields.'); return; }
+    setLoading('auth-btn-signup', true);
+    try {
+      await signUp(email, password, name);
+      CURRENT_USER = await getCurrentUser();
+      if (CURRENT_USER) {
+        APP_DATA.userName = name;
+        saveData(APP_DATA);
+        pushProfileToCloud(CURRENT_USER.id, { display_name: name, avatar: APP_DATA.userAvatar || 'wolf' });
+      }
+      hideAuthModal();
+      renderApp();
+      showToast(`Arc started, ${name}! Check your email to verify. ❄️`, '📧');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setLoading('auth-btn-signup', false);
+    }
+  });
+
+  // Close button
+  document.getElementById('auth-btn-close')?.addEventListener('click', () => {
+    hideAuthModal();
+  });
+
+  // Backdrop click dismiss
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) hideAuthModal();
+  });
+
+  // Guest
+  document.getElementById('auth-btn-guest')?.addEventListener('click', () => {
+    hideAuthModal();
+  });
+
+  // Sign Out
+  document.getElementById('btn-signout')?.addEventListener('click', async () => {
+    try {
+      await signOut();
+      CURRENT_USER = null;
+      renderApp();
+      showToast('Signed out. Progress saved locally.', '🚪');
+    } catch (err) {
+      showToast('Error signing out: ' + err.message, '⚠️');
+    }
+  });
+
+  // Show auth from profile
+  document.getElementById('btn-show-auth')?.addEventListener('click', () => {
+    showAuthModal();
+    bindAuthModal();
+  });
+}
+
+// ═══ ASYNC BOOT ══════════════════════════════════════════════════════
+async function init() {
+  try {
+    CURRENT_USER = await getCurrentUser();
+    if (CURRENT_USER) {
+      await pullCloudToLocal(CURRENT_USER.id, STORAGE_KEY);
+      APP_DATA = loadData(); // reload merged data
+    }
+  } catch (e) {
+    console.warn('[Boot] Supabase check failed, running offline:', e.message);
+  }
+  renderApp();
+
+  // Auto-show auth modal if user is not signed in and hasn't dismissed before
+  if (!CURRENT_USER) {
+    const dismissed = sessionStorage.getItem('auth_modal_dismissed');
+    if (!dismissed) {
+      // Delay slightly so app renders first
+      setTimeout(() => {
+        showAuthModal();
+        bindAuthModal();
+        sessionStorage.setItem('auth_modal_dismissed', '1');
+      }, 1500);
+    }
+  }
+
+  // Listen for auth state changes (e.g. magic link, token refresh)
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session?.user) {
+      CURRENT_USER = session.user;
+      await pullCloudToLocal(CURRENT_USER.id, STORAGE_KEY);
+      APP_DATA = loadData();
+      hideAuthModal();
+      renderApp();
+    } else if (event === 'SIGNED_OUT') {
+      CURRENT_USER = null;
+    }
+  });
+}
+
+init();
