@@ -1127,7 +1127,7 @@ function renderApp() {
         <div class="page-header">
           <div>
             <div class="greeting-small">${getGreeting()}, ${APP_DATA.userName || 'Warrior'}</div>
-            <h1 class="page-title">Winter Arc 2026</h1>
+            <h1 class="page-title">My Winter Arc 2026</h1>
           </div>
           <div class="streak-badge ${stats.currentStreak >= 3 ? 'pulse' : ''}">
             <span class="fire">${SVG.flame}</span>
@@ -1657,7 +1657,7 @@ function renderApp() {
         <button class="auth-modal-close" id="auth-btn-close" aria-label="Close">✕</button>
         
         <div class="auth-badge">❄️ CLOUD VAULT</div>
-        <h2 class="auth-title">Winter Arc 2026</h2>
+        <h2 class="auth-title">My Winter Arc 2026</h2>
         <p class="auth-subtitle">Sync your 92-day transformation across all devices.</p>
 
         <div class="auth-tabs">
@@ -1856,7 +1856,7 @@ function renderOnboarding(app) {
         <!-- Slide 1: Welcome -->
         <div class="onboarding-slide active" data-slide="0">
           <div class="onboarding-snowflake">❄️</div>
-          <h1 class="onboarding-title">Winter Arc 2026</h1>
+          <h1 class="onboarding-title">My Winter Arc 2026</h1>
           <p class="onboarding-subtitle">
             92 days of cold discipline, home training, and habit ascension. 
             No gym required — just your body, a backpack, and consistency.
@@ -1957,6 +1957,14 @@ function renderOnboarding(app) {
     showConfetti();
     renderApp();
     showToast(`Welcome, ${name}! Your Winter Arc begins now.`, '❄️');
+
+    // Prompt login / signup (new arc) / continue as guest right after onboarding
+    if (!CURRENT_USER) {
+      setTimeout(() => {
+        showAuthModal();
+        bindAuthModal();
+      }, 700);
+    }
   });
 }
 
