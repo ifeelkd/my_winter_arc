@@ -1159,6 +1159,9 @@ function renderApp() {
             Phase ${phase.num} — ${phase.name}
           </div>
           <div class="hero-quote">${quote.text}</div>
+          <button class="hero-share-btn" id="hero-share-today-btn">
+            <span>✨ Share Daily Milestone</span>
+          </button>
         </div>
 
         <!-- Quick Stats Grid -->
@@ -1474,6 +1477,11 @@ function renderApp() {
                   <h4>${badge.name} ${unlocked ? '✓' : ''}</h4>
                   <p>${badge.desc}</p>
                 </div>
+                ${unlocked ? `
+                  <button class="share-badge-trigger" data-share-badge="${badge.id}" data-badge-name="${badge.name}" data-badge-icon="${badge.icon}" data-badge-desc="${badge.desc}">
+                    <span>📤 Share</span>
+                  </button>
+                ` : ''}
               </div>
             `;
           }).join('')}
@@ -1705,6 +1713,39 @@ function renderApp() {
 
         <div class="auth-footer-actions">
           <button class="auth-btn-guest" id="auth-btn-guest">Continue offline as Guest (Local only)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Aesthetic Social Share Modal ═══ -->
+    <div class="share-modal-overlay" id="share-modal" style="display:none">
+      <div class="share-modal-card">
+        <button class="auth-modal-close" id="share-btn-close" aria-label="Close">✕</button>
+        
+        <div class="auth-badge">❄️ WINTER ARC TROPHY</div>
+        <h2 class="auth-title" id="share-modal-title">Share Milestone</h2>
+        <p class="auth-subtitle">Post your progress on Instagram, X, or story feeds.</p>
+
+        <div class="share-preview-container">
+          <canvas id="share-card-canvas" width="600" height="750"></canvas>
+        </div>
+
+        <div class="share-actions-grid">
+          <button class="btn-share-action btn-share-download" id="share-btn-download">
+            <span>📥 Save Card</span>
+          </button>
+          <button class="btn-share-action btn-share-copy" id="share-btn-copy">
+            <span>📋 Copy Card</span>
+          </button>
+        </div>
+
+        <div class="share-social-row">
+          <a href="#" id="share-link-x" target="_blank" rel="noopener" class="btn-social-chip">
+            <span>𝕏 Share on X</span>
+          </a>
+          <button class="btn-social-chip" id="share-btn-webshare">
+            <span>📲 Instagram / Stories</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2521,6 +2562,323 @@ function attachEventListeners() {
 
   // Supabase Auth bindings
   bindAuthModal();
+
+  // Social Share bindings
+  bindShareModal();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AESTHETIC SOCIAL SHARE CARD GENERATOR (CANVAS)
+// ═══════════════════════════════════════════════════════════════
+let CURRENT_SHARE_DATA = null;
+
+function generateShareCard(canvas, data) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;  // 600
+  const h = canvas.height; // 750
+
+  // 1. Deep Midnight Cosmic Frost Background
+  const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+  bgGrad.addColorStop(0, '#040711');
+  bgGrad.addColorStop(0.5, '#0b1329');
+  bgGrad.addColorStop(1, '#050a18');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle Cyan Glow at top
+  const radialGlow = ctx.createRadialGradient(w / 2, 80, 20, w / 2, 80, 280);
+  radialGlow.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
+  radialGlow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+  ctx.fillStyle = radialGlow;
+  ctx.fillRect(0, 0, w, h);
+
+  // 2. Outer Frosted Glass Border
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(20, 20, w - 40, h - 40);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(26, 26, w - 52, h - 52);
+
+  // 3. Header: App Brand Pill
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+  ctx.beginPath();
+  ctx.roundRect(w / 2 - 120, 48, 240, 36, 18);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '700 13px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('❄️ MY WINTER ARC 2026', w / 2, 71);
+
+  // 4. Center Trophy / Icon Ring
+  const iconY = 175;
+  ctx.beginPath();
+  ctx.arc(w / 2, iconY, 54, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+  ctx.fill();
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Subtle outer pulsing halo
+  ctx.beginPath();
+  ctx.arc(w / 2, iconY, 66, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Emoji Icon
+  ctx.font = '52px system-ui, Apple Color Emoji, Segoe UI Emoji';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(data.icon || '🏆', w / 2, iconY + 2);
+  ctx.textBaseline = 'alphabetic'; // reset
+
+  // 5. Title & Subtitle
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(data.title || 'Milestone Conquered', w / 2, 275);
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = '500 15px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.subtitle || '92-Day Bodyweight Transformation', w / 2, 305);
+
+  // 6. Aesthetic Stats Card in Center
+  const cardY = 340;
+  const cardH = 200;
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+  ctx.beginPath();
+  ctx.roundRect(50, cardY, w - 100, cardH, 20);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 2x2 Grid inside the stats card
+  const col1 = 170;
+  const col2 = 430;
+
+  // Stat 1: Day Count
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '800 24px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat1Value || 'Day 1', col1, cardY + 55);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat1Label || 'CURRENT PROGRESS', col1, cardY + 75);
+
+  // Stat 2: Streak / Status
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = '800 24px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat2Value || '1D 🔥', col2, cardY + 55);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat2Label || 'STREAK', col2, cardY + 75);
+
+  // Divider Line
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.beginPath();
+  ctx.moveTo(80, cardY + 100);
+  ctx.lineTo(w - 80, cardY + 100);
+  ctx.stroke();
+
+  // Stat 3: Total XP
+  ctx.fillStyle = '#34d399';
+  ctx.font = '800 22px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat3Value || '0 XP', col1, cardY + 145);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat3Label || 'EXPERIENCE', col1, cardY + 165);
+
+  // Stat 4: Phase / Discipline
+  ctx.fillStyle = '#a78bfa';
+  ctx.font = '800 22px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat4Value || 'Act I', col2, cardY + 145);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText(data.stat4Label || 'CHAPTER', col2, cardY + 165);
+
+  // 7. Identity & Spirit Warrior Bar
+  const footY = 575;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 17px system-ui, -apple-system, sans-serif';
+  ctx.fillText(`Conquered by ${data.userName || 'Warrior'}`, w / 2, footY);
+
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
+  ctx.font = '600 13px system-ui, -apple-system, sans-serif';
+  ctx.fillText(`${data.rankTitle || 'Novice of Frost'} · ${data.spiritAnimal || '🐺'} Spirit`, w / 2, footY + 24);
+
+  // 8. Bottom Tagline / Watermark
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.font = '500 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText('92 Days. Zero Excuses. Home Training Ascension.', w / 2, 690);
+
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+  ctx.font = '600 11px system-ui, -apple-system, sans-serif';
+  ctx.fillText('mywinterarc.com · #WinterArc2026', w / 2, 712);
+}
+
+function showShareModal(shareData) {
+  CURRENT_SHARE_DATA = shareData;
+  const modal = document.getElementById('share-modal');
+  const canvas = document.getElementById('share-card-canvas');
+  const titleEl = document.getElementById('share-modal-title');
+  if (titleEl) titleEl.textContent = shareData.modalTitle || 'Share Achievement';
+
+  generateShareCard(canvas, shareData);
+
+  // Prepare X (Twitter) intent link
+  const xLink = document.getElementById('share-link-x');
+  if (xLink) {
+    const tweetText = encodeURIComponent(
+      `Conquered ${shareData.title} in My Winter Arc 2026! ❄️🔥\nDay ${shareData.dayNum || 1} of 92.\nNo gym required — just consistency.\n\n#WinterArc #WinterArc2026 #FitnessTransformation`
+    );
+    xLink.href = `https://twitter.com/intent/tweet?text=${tweetText}`;
+  }
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function hideShareModal() {
+  const modal = document.getElementById('share-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function bindShareModal() {
+  const modal = document.getElementById('share-modal');
+  if (!modal) return;
+
+  // Close button
+  document.getElementById('share-btn-close')?.addEventListener('click', hideShareModal);
+
+  // Backdrop click dismiss
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) hideShareModal();
+  });
+
+  // Download Card as PNG
+  document.getElementById('share-btn-download')?.addEventListener('click', () => {
+    const canvas = document.getElementById('share-card-canvas');
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = `winter-arc-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    showToast('Trophy Card saved to device! 📥', '❄️');
+  });
+
+  // Copy Card Image to Clipboard
+  document.getElementById('share-btn-copy')?.addEventListener('click', async () => {
+    const canvas = document.getElementById('share-card-canvas');
+    if (!canvas) return;
+    try {
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        showToast('Trophy Card copied to clipboard! 📋', '✨');
+      });
+    } catch (err) {
+      // Fallback
+      showToast('Card download is available below! 📥', 'ℹ️');
+    }
+  });
+
+  // Native Web Share API (mobile Instagram / Stories / WhatsApp / AirDrop)
+  document.getElementById('share-btn-webshare')?.addEventListener('click', async () => {
+    const canvas = document.getElementById('share-card-canvas');
+    if (!canvas) return;
+    if (navigator.share) {
+      canvas.toBlob(async (blob) => {
+        try {
+          const file = new File([blob], 'winter-arc-achievement.png', { type: 'image/png' });
+          await navigator.share({
+            title: 'My Winter Arc 2026 Milestone',
+            text: `Conquering Day ${CURRENT_SHARE_DATA?.dayNum || 1} of Winter Arc 2026! ❄️`,
+            files: [file]
+          });
+          showToast('Shared successfully!', '🚀');
+        } catch (e) {
+          // User cancelled or share failed
+        }
+      });
+    } else {
+      // Fallback download for desktop
+      const link = document.createElement('a');
+      link.download = `winter-arc-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('Card saved! Post it to your Instagram or X story! 📲', '📸');
+    }
+  });
+
+  // Wire up Hero "Share Daily Milestone" button
+  document.getElementById('hero-share-today-btn')?.addEventListener('click', () => {
+    const dayNum = getDayNumber(today());
+    const stats = computeStats();
+    const totalXP = calculateTotalXP(APP_DATA);
+    const xpData = getPlayerLevel(totalXP);
+    const phase = getPhase(dayNum);
+
+    showShareModal({
+      modalTitle: `Day ${dayNum} Milestone`,
+      icon: '❄️',
+      title: `Day ${dayNum} of 92 Conquered`,
+      subtitle: `Phase ${phase.num} — ${phase.name}`,
+      stat1Value: `Day ${dayNum}`,
+      stat1Label: 'DAY OF ARC',
+      stat2Value: `${stats.currentStreak} Days 🔥`,
+      stat2Label: 'ACTIVE STREAK',
+      stat3Value: `${totalXP.toLocaleString()} XP`,
+      stat3Label: 'TOTAL XP',
+      stat4Value: `Act ${phase.num}`,
+      stat4Label: 'CHAPTER',
+      userName: APP_DATA.userName || 'Warrior',
+      rankTitle: `LVL ${xpData.level} ${xpData.title}`,
+      spiritAnimal: APP_DATA.userAvatar || '🐺',
+      dayNum: dayNum
+    });
+  });
+
+  // Wire up Badge Card Share Triggers
+  document.querySelectorAll('[data-share-badge]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const badgeName = btn.dataset.badgeName || 'Trophy';
+      const badgeIcon = btn.dataset.badgeIcon || '🏆';
+      const badgeDesc = btn.dataset.badgeDesc || 'Winter Arc Achievement';
+      const dayNum = getDayNumber(today());
+      const stats = computeStats();
+      const totalXP = calculateTotalXP(APP_DATA);
+      const xpData = getPlayerLevel(totalXP);
+
+      showShareModal({
+        modalTitle: `${badgeName} Unlocked!`,
+        icon: badgeIcon,
+        title: badgeName,
+        subtitle: badgeDesc,
+        stat1Value: `${stats.totalDaysCompleted} Days`,
+        stat1Label: 'COMPLETED',
+        stat2Value: `${stats.currentStreak}D Streak`,
+        stat2Label: 'DISCIPLINE',
+        stat3Value: `${totalXP.toLocaleString()} XP`,
+        stat3Label: 'TOTAL XP',
+        stat4Value: `LVL ${xpData.level}`,
+        stat4Label: xpData.title.toUpperCase(),
+        userName: APP_DATA.userName || 'Warrior',
+        rankTitle: `LVL ${xpData.level} ${xpData.title}`,
+        spiritAnimal: APP_DATA.userAvatar || '🐺',
+        dayNum: dayNum
+      });
+    });
+  });
 }
 
 
